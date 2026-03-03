@@ -1,72 +1,92 @@
-﻿using FileTransfer;
+﻿using System;
 using System.IO;
-public class FileTransferService
+
+namespace FileTransferApp
 {
-    public async Task ExecuteTransfer(TransferItem item, Action<string> logAction)
+    public class FileTransferService
     {
-        try
+        public void Execute(TransferItem item)
         {
-            string src = item.SourcePath.Trim('\"');
-            string dest = item.DestPath.Trim('\"');
-
-            bool isSrcDir = Directory.Exists(src);
-            bool isSrcFile = File.Exists(src);
-            bool isDestDir = Directory.Exists(dest);
-
-            if (!isSrcDir && !isSrcFile) throw new Exception("転送元が存在しません。");
-
-            if (isSrcFile)
+            try
             {
-                string finalDest = isDestDir ? Path.Combine(dest, Path.GetFileName(src)) : dest;
-                CopyFileLogic(src, finalDest, item.DeleteAfterTransfer, item.UseTimestamp);
+                string src = item.SourcePath.Trim('\"');
+                string dest = item.DestPath.Trim('\"');
+
+                if (string.IsNullOrWhiteSpace(src) || string.IsNullOrWhiteSpace(dest))
+                    throw new Exception("パスが空です。");
+
+                if (File.Exists(src))
+                {
+                    string finalDest = Directory.Exists(dest) ? Path.Combine(dest, Path.GetFileName(src)) : dest;
+                    CopyFile(src, finalDest, item.DeleteAfter, item.UseTimestamp);
+                }
+                else if (Directory.Exists(src))
+                {
+                    if (File.Exists(dest)) throw new Exception("フォルダからファイルへの転送は不可。");
+                    CopyDirectory(src, dest, item.EntireFolder, item.DeleteAfter, item.UseTimestamp);
+                }
+                else throw new Exception("転送元が存在しません。");
+
+                item.Status = "完了";
             }
-            else if (isSrcDir && isDestDir)
+            catch (Exception ex)
             {
-                CopyDirectoryLogic(src, dest, item.TransferEntireFolder, item.DeleteAfterTransfer, item.UseTimestamp);
+                item.Status = "エラー";
+                throw ex; // 呼び出し元でMessageBoxを表示
             }
-            else if (isSrcDir && !isDestDir)
+        }
+
+        private void CopyFile(string src, string dest, bool delete, bool useTs)
+        {
+            string target = dest;
+            if (useTs && File.Exists(dest))
             {
-                throw new Exception("フォルダからファイルへの転送は不可。");
+                string dir = Path.GetDirectoryName(dest);
+                string name = Path.GetFileNameWithoutExtension(dest);
+                string ext = Path.GetExtension(dest);
+                target = Path.Combine(dir, name + "_" + DateTime.Now.ToString("yyyyMMddHHmmss") + ext);
             }
 
-            item.Status = "完了";
-            logAction($"成功: {src}");
+            string targetDir = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+            File.Copy(src, target, true);
+            if (delete) File.Delete(src);
         }
-        catch (Exception ex)
+
+        private void CopyDirectory(string src, string dest, bool entire, bool delete, bool useTs)
         {
-            item.Status = "エラー";
-            logAction($"失敗: {ex.Message}");
+            // 転送先の決定
+            string baseDest = entire ? Path.Combine(dest, new DirectoryInfo(src).Name) : dest;
+
+            // 全ファイルのコピー
+            foreach (string filePath in Directory.GetFiles(src, "*.*", SearchOption.AllDirectories))
+            {
+                string rel = filePath.Substring(src.Length).TrimStart(Path.DirectorySeparatorChar);
+                CopyFile(filePath, Path.Combine(baseDest, rel), false, useTs);
+            }
+
+            // 削除処理
+            if (delete)
+            {
+                if (entire)
+                {
+                    // フォルダごと削除
+                    Directory.Delete(src, true);
+                }
+                else
+                {
+                    // 中身だけ削除（親フォルダは残す）
+                    foreach (string file in Directory.GetFiles(src))
+                    {
+                        File.Delete(file);
+                    }
+                    foreach (string dir in Directory.GetDirectories(src))
+                    {
+                        Directory.Delete(dir, true);
+                    }
+                }
+            }
         }
-    }
-
-    private void CopyFileLogic(string src, string dest, bool delete, bool useTimestamp)
-    {
-        string targetPath = dest;
-
-        // チェックあり（useTimestamp = true）かつファイル存在時のみリネーム
-        if (useTimestamp && File.Exists(dest))
-        {
-            string dir = Path.GetDirectoryName(dest) ?? "";
-            string name = Path.GetFileNameWithoutExtension(dest);
-            string ext = Path.GetExtension(dest);
-            targetPath = Path.Combine(dir, $"{name}_{DateTime.Now:yyyyMMddHHmmss}{ext}");
-        }
-
-        string destDir = Path.GetDirectoryName(targetPath);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-
-        File.Copy(src, targetPath, true); // デフォルト（useTimestamp=false）ならここが実行され上書きされる
-        if (delete) File.Delete(src);
-    }
-
-    private void CopyDirectoryLogic(string src, string dest, bool entire, bool delete, bool useTimestamp)
-    {
-        string targetBase = entire ? Path.Combine(dest, new DirectoryInfo(src).Name) : dest;
-        foreach (string file in Directory.GetFiles(src, "*.*", SearchOption.AllDirectories))
-        {
-            string relPath = Path.GetRelativePath(src, file);
-            CopyFileLogic(file, Path.Combine(targetBase, relPath), false, useTimestamp);
-        }
-        if (delete) Directory.Delete(src, true);
     }
 }

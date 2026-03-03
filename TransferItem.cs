@@ -1,18 +1,14 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace FileTransfer
+namespace FileTransferApp
 {
     public class TransferItem
     {
         public string SourcePath { get; set; } = "";
+        public bool DeleteAfter { get; set; }
         public string DestPath { get; set; } = "";
-        public bool DeleteAfterTransfer { get; set; }
-        public bool TransferEntireFolder { get; set; }
-        public bool UseTimestamp { get; set; } // 追加: チェックありで日付付与
+        public bool EntireFolder { get; set; }
+        public bool UseTimestamp { get; set; }
         public string Status { get; set; } = "待機中";
     }
 }
